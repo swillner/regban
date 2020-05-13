@@ -1,0 +1,35 @@
+log:
+  level: info
+cleanupinterval: 3600
+nft:
+  table: testtable
+  type: ip
+  ipv4set: blacklistv4
+  # create using (e.g. for table "default"):
+  #   sudo nft add set inet default blacklistv4 { type ipv4_addr\; flags timeout\; \}
+  # and use with rule
+  #   ip saddr @blacklistv4 drop
+  ipv6set: blacklistv6
+  # create using (e.g. for table "default"):
+  #   sudo nft add set inet default blacklistv6 { type ipv6_addr\; flags timeout, interval\; \}
+  # and use with rule
+  #   ip6 saddr @blacklistv6 drop
+processes:
+  - command: "journalctl -t sshd -f -n 0 -q" # or, e.g. "tail -n 0 -F /var/log/sshd.log"
+    patterns:
+      - pattern: ".* Invalid user .* from {{ip}}.*"
+        score: 100
+      - pattern: ".* Failed password for .* from {{ip}} .*"
+        score: 50
+      - pattern: ".* Failed password for root from {{ip}} .*"
+        score: 200
+rangetables:
+  - filename: "iprange-table.csv"
+scores:
+  decay:
+    amount: 10
+    per: 3600
+  table:
+    100:
+      bantime: 86400
+      score: 0
