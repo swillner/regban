@@ -20,7 +20,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 target_include_directories(regban PRIVATE include lib/cpp-library lib/spdlog/include)
-target_compile_features(regban PUBLIC cxx_std_11)
+target_compile_features(regban PUBLIC cxx_std_14)
 
 add_system_paths()
 
@@ -37,7 +37,7 @@ target_link_libraries(regban PRIVATE nftnl)
 set_advanced_cpp_warnings(regban)
 set_build_type_specifics(regban)
 add_git_version(regban WITH_DIFF)
-add_cpp_tools(regban STD c++11)
+add_cpp_tools(regban STD c++14)
 
 
 add_executable(benchmark_iptables EXCLUDE_FROM_ALL tests/benchmark_iptables.cpp)
