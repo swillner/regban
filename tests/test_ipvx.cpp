@@ -80,6 +80,7 @@ TEST_CASE("ipv6") {
         CHECK(to_string(0x1234007890abcdef) == "1234:78:90ab:cdef::");
         CHECK(to_string(0x1234000090abcdef) == "1234:0:90ab:cdef::");
         CHECK(to_string(0x567890abcdef) == "0:5678:90ab:cdef::");
+        CHECK(to_string(0xfd00001100000000) == "fd00:11::");
     }
 
     SUBCASE("parsing") {
@@ -105,9 +106,8 @@ TEST_CASE("ipv6") {
         CHECK(0 == IPvX::parse("1234x:5678:90ab:cdef::"));
         CHECK(0 == IPvX::parse("1234:5678x:90ab:cdef::"));
         CHECK(0 == IPvX::parse("1234:5678:90abx:cdef::"));
-        CHECK(0 == IPvX::parse("1234:5678:90ab::cdef::"));
         CHECK(0 == IPvX::parse("12345:5678:90ab::cdef::"));
-        CHECK(0 == IPvX::parse("1234:5678:90ab:cdef:1234:"));
+        CHECK(0xfd00001100000000 == IPvX::parse("fd00:11::1"));  // skipping second half of IPv6
         // TODO CHECK(0 == IPvX::parse("1234:5678:90ab:cdef:"));
     }
 }

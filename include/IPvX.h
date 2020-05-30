@@ -96,7 +96,7 @@ class IPvX {
                 last = *pos;
                 pos = end + 1;
             }
-            if (*pos != ':' && *pos != '\0') {
+            if (!(*pos == ':' || *pos == '\0' || (*pos >= 'a' && *pos <= 'f') || (*pos >= '0' && *pos <= '9'))) {
                 return 0;
             }
             return res << ((4 - i) * 16);
