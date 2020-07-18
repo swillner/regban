@@ -124,7 +124,9 @@ class SystemBanSet {
         logger->debug("Initializing");
         table_name = std::move(table_name_p);
         table_type_name = std::move(table_type_name_p);
-        if (table_type_name == "ip") {
+        if (table_type_name == "inet") {
+            table_type = NFPROTO_INET;
+        } else if (table_type_name == "ip") {
             table_type = NFPROTO_IPV4;
         } else if (table_type_name == "ip6") {
             table_type = NFPROTO_IPV6;
@@ -135,7 +137,7 @@ class SystemBanSet {
         } else if (table_type_name == "unspec") {
             table_type = NFPROTO_UNSPEC;
         } else {
-            throw std::runtime_error("Invalid table type '" + table_type_name + "', use ip, ip6, bridge, arp, or unspec");
+            throw std::runtime_error("Invalid table type '" + table_type_name + "', use inet, ip, ip6, bridge, arp, or unspec");
         }
 
         set_v4_name = std::move(set_v4_name_p);
