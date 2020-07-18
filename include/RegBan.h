@@ -5,7 +5,6 @@
 
 #include <array>
 #include <cstdio>
-#include <ctime>
 #include <iostream>
 #include <regex>
 #include <stdexcept>
@@ -79,9 +78,9 @@ class RegBan {
     Score score_decay;
     ScoreTable scoretable;
     SystemBanSet banset;
-    Time cleanup_interval;
+    unsigned int cleanup_interval;
     Time last_cleanup;
-    Time score_decay_interval;
+    unsigned int score_decay_interval;
     bool dry_run;
     int selfpipe[2];  // for self-pipe trick to cancel select() call
     std::shared_ptr<spdlog::logger> logger;
@@ -91,7 +90,7 @@ class RegBan {
     RegBan(const settings::SettingsNode& settings, bool dry_run_p) : dry_run(dry_run_p) {
         logger = spdlog::default_logger()->clone("RegBan");
 
-        cleanup_interval = settings["cleanupinterval"].as<Time>();
+        cleanup_interval = settings["cleanupinterval"].as<unsigned int>();
 
         const auto& nftsettings = settings["nft"];
         if (!dry_run) {
@@ -144,7 +143,7 @@ class RegBan {
         for (const auto& scoretableentry : scoressettings["table"].as_map()) {
             scoretable.add(ScoreTable::Element{
                 std::stoi(scoretableentry.first),
-                scoretableentry.second["bantime"].as<Time>(),
+                scoretableentry.second["bantime"].as<unsigned int>(),
                 scoretableentry.second["score"].as<Score>(),
             });
         }
@@ -153,7 +152,7 @@ class RegBan {
     ~RegBan() { stop(); }
 
     void adjust_ip_score(BanData& bandata, Time now) {
-        const long diff = (bandata.last_scoretime - now) / score_decay_interval;
+        const auto diff = std::chrono::duration_cast<std::chrono::seconds>(bandata.last_scoretime - now).count() / score_decay_interval;
         if (bandata.score <= diff) {
             bandata.score = 0;
         } else {
@@ -241,7 +240,7 @@ class RegBan {
 
     void run() {
         pipe(selfpipe);
-        last_cleanup = std::time(nullptr);
+        last_cleanup = std::chrono::system_clock::now();
         fd_set fds;
         while (processes.size() > 0) {
             FD_ZERO(&fds);
@@ -255,8 +254,8 @@ class RegBan {
             }
             logger->debug("Waiting for new lines...");
             const auto n = select(nfds + 1, &fds, nullptr, nullptr, nullptr);
-            const auto now = std::time(nullptr);
-            if (now - last_cleanup > cleanup_interval) {
+            const auto now = std::chrono::system_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - last_cleanup).count() > cleanup_interval) {
                 cleanup(now);
             }
             if (n <= 0) {

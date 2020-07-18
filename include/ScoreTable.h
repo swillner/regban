@@ -11,7 +11,7 @@ class ScoreTable {
   public:
     struct Element {
         Score lower_bound;
-        Time bantime;
+        unsigned int bantime;
         Score add_score;
     };
 
