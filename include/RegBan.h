@@ -197,9 +197,9 @@ class RegBan {
         bandata.score += add_score;
         const auto& tabledata = scoretable.lookup(bandata.score);
         bandata.score += tabledata.add_score;
-        logger->debug("Score for {}: {}", IPvX::Formatter(ip), bandata.score);
+        logger->info("Score for {}: {}", IPvX::Formatter(ip), bandata.score);
         if (tabledata.bantime > 0) {
-            logger->info("Banning {} for {}s", IPvX::Formatter(ip), tabledata.bantime);
+            logger->warn("Banning {} for {}s", IPvX::Formatter(ip), tabledata.bantime);
             if (!dry_run) {
                 banset.add_ip(ip, tabledata.bantime);
                 banset.commit_batch();
