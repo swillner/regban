@@ -9,10 +9,10 @@ int main() {
     const auto elements = create_element_list(2 * N);
 
     {
-        nanobench::Config cfg;
-        cfg.title("insert").unit(std::to_string(N) + "ips").relative(true);
+        nanobench::Bench b;
+        b.title("insert").unit(std::to_string(N) + "ips").relative(true);
 
-        cfg.run("std::map", [&] {
+        b.run("std::map", [&] {
             std::map<IPvX, Payload> std_map;
             for (auto i = 0; i < N; ++i) {
                 const auto& e = elements[i];
@@ -20,7 +20,7 @@ int main() {
             }
         });
 
-        cfg.run("regban::IPTable", [&] {
+        b.run("regban::IPTable", [&] {
             regban::IPTable<Payload> iptable;
             for (auto i = 0; i < N; ++i) {
                 const auto& e = elements[i];
@@ -28,7 +28,7 @@ int main() {
             }
         });
 
-        cfg.run("regban::IPTable (prereserved)", [&] {
+        b.run("regban::IPTable (prereserved)", [&] {
             regban::IPTable<Payload> iptable2(N);
             for (auto i = 0; i < N; ++i) {
                 const auto& e = elements[i];
@@ -49,16 +49,16 @@ int main() {
         }
 
         {
-            nanobench::Config cfg;
-            cfg.title("find (hit)").unit(std::to_string(N) + "ips").relative(true);
+            nanobench::Bench b;
+            b.title("find (hit)").unit(std::to_string(N) + "ips").relative(true);
 
-            cfg.run("std::map", [&] {
+            b.run("std::map", [&] {
                 for (auto i = 0; i < N; ++i) {
                     const auto& res = std_map.find(elements[i].ip);
                 }
             });
 
-            cfg.run("regban::IPTable", [&] {
+            b.run("regban::IPTable", [&] {
                 for (auto i = 0; i < N; ++i) {
                     const auto* res = iptable.find(elements[i].ip);
                 }
@@ -66,16 +66,16 @@ int main() {
         }
 
         {
-            nanobench::Config cfg;
-            cfg.title("find (miss)").unit(std::to_string(N) + "ips").relative(true).minEpochIterations(100);
+            nanobench::Bench b;
+            b.title("find (miss)").unit(std::to_string(N) + "ips").relative(true).minEpochIterations(100);
 
-            cfg.run("std::map", [&] {
+            b.run("std::map", [&] {
                 for (auto i = N; i < 2 * N; ++i) {
                     const auto& res = std_map.find(elements[i].ip);
                 }
             });
 
-            cfg.run("regban::IPTable", [&] {
+            b.run("regban::IPTable", [&] {
                 for (auto i = N; i < 2 * N; ++i) {
                     const auto* res = iptable.find(elements[i].ip);
                 }
