@@ -138,7 +138,7 @@ class RegBan {
         const auto& scoressettings = settings["scores"];
         const auto& scoredecaysettings = scoressettings["decay"];
         score_decay = scoredecaysettings["amount"].as<Score>();
-        score_decay_interval = scoredecaysettings["per"].as<int>();
+        score_decay_interval = scoredecaysettings["per"].as<unsigned int>();
 
         for (const auto& scoretableentry : scoressettings["table"].as_map()) {
             scoretable.add(ScoreTable::Element{
@@ -152,7 +152,7 @@ class RegBan {
     ~RegBan() { stop(); }
 
     void adjust_ip_score(BanData& bandata, Time now) {
-        const auto diff = std::chrono::duration_cast<std::chrono::seconds>(bandata.last_scoretime - now).count() / score_decay_interval;
+        const auto diff = std::chrono::duration_cast<std::chrono::seconds>(now - bandata.last_scoretime).count() * score_decay / score_decay_interval;
         if (bandata.score <= diff) {
             bandata.score = 0;
         } else {
