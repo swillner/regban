@@ -26,6 +26,9 @@ static int run(const settings::SettingsNode& settings, bool dry_run) {
         if (logsettings.has("level")) {
             spdlog::set_level(spdlog::level::from_str(logsettings["level"].as<std::string>()));
         }
+        if (logsettings.has("pattern")) {
+            spdlog::set_pattern(logsettings["pattern"].as<std::string>());
+        }
         if (logsettings.has("filename")) {
             logger = spdlog::basic_logger_st("main", logsettings["filename"].as<std::string>());
         }
