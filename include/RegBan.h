@@ -2,6 +2,7 @@
 #define REGBAN_H
 
 #include <sys/select.h>
+#include <sys/wait.h>
 
 #include <array>
 #include <cstdio>
@@ -67,10 +68,53 @@ class RegBan {
     struct Process {
         std::string command;
         int fd;
-        FILE* stream;
+        pid_t pid;
+        FILE* stream = nullptr;
         std::array<char, BUFFER_SIZE> buf;
         int bufcount = 0;
         std::vector<Pattern> patterns;
+
+        Process() = default;
+        Process(const Process&) = delete;
+        Process& operator=(const Process&) = delete;
+        Process(Process&&) = default;
+        Process& operator=(Process&&) = default;
+
+        void open_process() {
+            close_process();
+
+            int p[2];
+            if (pipe2(p, O_NONBLOCK) < 0) {
+                throw std::runtime_error("Could not create pipe: " + std::string(std::strerror(errno)));
+            }
+            pid = fork();
+            if (pid < 0) {
+                throw std::runtime_error("Could not fork: " + std::string(std::strerror(errno)));
+            }
+            if (pid == 0) {
+                close(p[0]);
+                if (dup2(p[1], STDOUT_FILENO) < 0) {
+                    throw std::runtime_error("Could not redirect stdout: " + std::string(std::strerror(errno)));
+                }
+                close(p[1]);
+                const char* args[] = {"/bin/sh", "-c", command.c_str(), nullptr};
+                execv(args[0], const_cast<char* const*>(args));
+                throw std::runtime_error("Could not run \"/bin/sh -c '" + command + "'\": " + std::strerror(errno));
+            }
+            close(p[1]);
+            fd = p[0];
+            stream = fdopen(fd, "r");
+            if (stream == nullptr) {
+                throw std::runtime_error("Could not open stream to '" + command + "': " + std::strerror(errno));
+            }
+        }
+        void close_process() {
+            if (stream != nullptr) {
+                kill(pid, SIGTERM);
+                stream = nullptr;
+            }
+        }
+        ~Process() { close_process(); }
     };
 
     IPRangeTable<Score> rangetable;
@@ -99,14 +143,8 @@ class RegBan {
         }
 
         for (const auto& processessettings : settings["processes"].as_sequence()) {
-            Process process;
+            Process& process = *processes.emplace(std::end(processes));
             process.command = processessettings["command"].as<std::string>();
-            process.stream = popen(process.command.c_str(), "r");
-            if (process.stream == nullptr) {
-                throw std::runtime_error("Could not run '" + process.command + "'");
-            }
-            process.fd = fileno(process.stream);
-            fcntl(process.fd, F_SETFL, O_NONBLOCK);
             for (const auto& patternsettings : processessettings["patterns"].as_sequence()) {
                 const auto p = fill_template(patternsettings["pattern"].as<std::string>());
                 const auto regex = std::regex(p, std::regex::optimize);
@@ -115,23 +153,28 @@ class RegBan {
                 }
                 process.patterns.emplace_back(Pattern{regex, patternsettings["score"].as<Score>()});
             }
-            processes.emplace_back(process);
+            process.open_process();
         }
 
         for (const auto& rangetablesettings : settings["rangetables"].as_sequence()) {
-            const auto& filename = rangetablesettings["filename"].as<std::string>();
-            std::ifstream file(filename);
-            if (!file) {
-                throw std::runtime_error("Could not open '" + filename + "'");
-            }
-            try {
-                csv::Parser parser(file);
-                while (parser.next_row()) {
-                    const auto c = parser.read<std::string, unsigned char, Score>();
-                    rangetable.find_or_insert(IPvX::parse(std::get<0>(c).c_str()), std::get<1>(c)).second = std::get<2>(c);
+            if (rangetablesettings.has("filename")) {
+                const auto& filename = rangetablesettings["filename"].as<std::string>();
+                std::ifstream file(filename);
+                if (!file) {
+                    throw std::runtime_error("Could not open '" + filename + "'");
                 }
-            } catch (const csv::parser_exception& ex) {
-                throw std::runtime_error(ex.format());
+                try {
+                    csv::Parser parser(file);
+                    do {
+                        const auto c = parser.read<std::string, unsigned char, Score>();
+                        rangetable.find_or_insert(IPvX::parse(std::get<0>(c).c_str()), std::get<1>(c)).second = std::get<2>(c);
+                    } while (parser.next_row());
+                } catch (const csv::parser_exception& ex) {
+                    throw std::runtime_error(ex.format());
+                }
+            } else {
+                rangetable.find_or_insert(IPvX::parse(rangetablesettings["ip"].as<std::string>().c_str()), rangetablesettings["cidr"].as<unsigned>()).second =
+                    rangetablesettings["score"].as<Score>();
             }
         }
 
@@ -178,10 +221,10 @@ class RegBan {
 
     void handle_ip(IPvX ip, Time now, Score add_score) {
         const auto rangelookup = rangetable.find_range_for(ip);
-        if (rangelookup.second) {
+        if (rangelookup.second != nullptr) {
             const auto rangescore = *rangelookup.second;
-            if (rangescore <= 0) {
-                // whitelisted
+            if (rangescore <= 0) {  // ip is always allowed
+                logger->debug("ip {} is always allowed", IPvX::Formatter(ip));
                 return;
             }
             add_score += rangescore;
@@ -209,6 +252,18 @@ class RegBan {
 
     void check_process(Process& process, Time now) {
         const auto nread = std::fread(&process.buf[process.bufcount], sizeof(process.buf[0]), process.buf.size() - process.bufcount - 1, process.stream);
+        if (nread == 0) {
+            int stat;
+            waitpid(process.pid, &stat, 0);
+            if (WIFEXITED(stat)) {
+                logger->debug("Command '{}' exited with rc {}", process.command, WEXITSTATUS(stat));
+                if (WEXITSTATUS(stat) != 0) {
+                    throw std::runtime_error("Command '" + process.command + "' failed");
+                }
+                logger->info("Restarting '{}'", process.command);
+                process.open_process();
+            }
+        }
         logger->debug("Read {} bytes", nread);
         process.bufcount += nread;
         process.buf[process.bufcount] = '\0';
@@ -252,7 +307,7 @@ class RegBan {
                     nfds = process.fd;
                 }
             }
-            logger->debug("Waiting for new lines...");
+            logger->debug("Waiting for new lines from {} processes...", processes.size());
             const auto n = select(nfds + 1, &fds, nullptr, nullptr, nullptr);
             const auto now = std::chrono::system_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_cleanup).count() > cleanup_interval) {
@@ -273,9 +328,6 @@ class RegBan {
     }
 
     void stop() {
-        for (const auto& process : processes) {
-            pclose(process.stream);
-        }
         processes.clear();
         write(selfpipe[1], "\0", 1);
     }
