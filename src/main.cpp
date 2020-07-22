@@ -67,7 +67,7 @@ static void print_usage(const char* program_name) {
               << program_name
               << " (<option> | <settingsfile>)\n"
                  "Options:\n"
-              << (regban::has_diff ? "      --diff     Print git diff output from compilation\n" : "") << "  -d, --dry      Dry run\n"
+              << (regban::has_diff ? "      --diff     Print git diff output from compilation\n" : "") << "  -d, --dry-run  Dry run\n"
               << "  -h, --help     Print this help text\n"
                  "  -v, --version  Print version"
               << std::endl;
