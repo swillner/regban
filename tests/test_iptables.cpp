@@ -201,3 +201,100 @@ TEST_CASE("multi") {
         }
     }
 }
+
+TEST_CASE("range") {
+    regban::IPRangeTable<Payload> iprangetable;
+    REQUIRE(iprangetable.size() == 0);
+
+    const auto e1 = create_element(IPvX::parse("192.168.1.64"));
+    const auto e2 = create_element(IPvX::parse("fd00:11::64"));
+
+    {
+        const auto& res = iprangetable.find_or_insert(e1.ip, 24);
+        REQUIRE(iprangetable.size() == 1);
+        REQUIRE(!res.first);
+        res.second = e1.value;
+    }
+
+    {
+        const auto& res = iprangetable.find_or_insert(e2.ip, 64);
+        REQUIRE(iprangetable.size() == 2);
+        REQUIRE(!res.first);
+        res.second = e2.value;
+    }
+
+    SUBCASE("insert again") {
+        {
+            const auto& res = iprangetable.find_or_insert(e1.ip, 32);
+            REQUIRE(iprangetable.size() == 2);
+            REQUIRE(res.first);
+            REQUIRE(res.second == e1.value);
+        }
+    }
+
+    SUBCASE("find") {
+        {
+            const auto res = iprangetable.find_range_for(e1.ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == e1.ip);
+            REQUIRE(cidr == 24);
+            REQUIRE(*value == e1.value);
+        }
+
+        {
+            const auto ip = IPvX::parse("192.168.1.128");
+            const auto res = iprangetable.find_range_for(ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == e1.ip);
+            REQUIRE(cidr == 24);
+            REQUIRE(*value == e1.value);
+        }
+
+        {
+            const auto ip = IPvX::parse("192.168.2.3");
+            const auto res = iprangetable.find_range_for(ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == ip);
+            REQUIRE(cidr == 0);
+            REQUIRE(value == nullptr);
+        }
+
+        {
+            const auto res = iprangetable.find_range_for(e2.ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == e2.ip);
+            REQUIRE(cidr == 64);
+            REQUIRE(*value == e2.value);
+        }
+
+        {
+            const auto ip = IPvX::parse("fd00:11:0:0:1::");
+            const auto res = iprangetable.find_range_for(ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == e2.ip);
+            REQUIRE(cidr == 64);
+            REQUIRE(*value == e2.value);
+        }
+
+        {
+            const auto ip = IPvX::parse("fd00:12::");
+            const auto res = iprangetable.find_range_for(ip);
+            const auto& res_ip = res.first.first;
+            const auto& cidr = res.first.second;
+            const auto* value = res.second;
+            REQUIRE(res_ip == ip);
+            REQUIRE(cidr == 0);
+            REQUIRE(value == nullptr);
+        }
+    }
+}
