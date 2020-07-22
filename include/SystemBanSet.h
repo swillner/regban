@@ -64,43 +64,42 @@ class SystemBanSet {
 
         auto ret = mnl_socket_recvfrom(nl, &buf[0], buf.size());
         while (ret > 0) {
-            ret = mnl_cb_run(
-                &buf[0], ret, seq, portid,
-                [](const nlmsghdr* nlh, void* data) {
-                    auto* d = static_cast<CheckData*>(data);
-                    auto* t = nftnl_set_alloc();
-                    if (t == nullptr) {
-                        throw std::bad_alloc();
-                    }
+            ret = mnl_cb_run(&buf[0], ret, seq, portid,
+                             [](const nlmsghdr* nlh, void* data) {
+                                 auto* d = static_cast<CheckData*>(data);
+                                 auto* t = nftnl_set_alloc();
+                                 if (t == nullptr) {
+                                     throw std::bad_alloc();
+                                 }
 
-                    if (nftnl_set_nlmsg_parse(nlh, t) < 0) {
-                        d->logger->error("nft message parsing failed");
-                        nftnl_set_free(t);
-                        return MNL_CB_OK;
-                    }
+                                 if (nftnl_set_nlmsg_parse(nlh, t) < 0) {
+                                     d->logger->error("nft message parsing failed");
+                                     nftnl_set_free(t);
+                                     return MNL_CB_OK;
+                                 }
 
-                    const auto* name = nftnl_set_get_str(t, NFTNL_SET_NAME);
-                    d->logger->debug("Found nftable {}", name);
-                    if (d->name == name) {
-                        d->found = true;
-                        if ((nftnl_set_get_u32(t, NFTNL_SET_FLAGS) & NFT_SET_TIMEOUT) == 0) {
-                            nftnl_set_free(t);
-                            throw std::runtime_error("nftable set " + d->name + " does not support timeouts");
-                        }
-                        if (d->key_type == KEY_TYPE_IPv6 && (nftnl_set_get_u32(t, NFTNL_SET_FLAGS) & NFT_SET_INTERVAL) == 0) {
-                            nftnl_set_free(t);
-                            throw std::runtime_error("nftable set " + d->name + " does not support intervals");
-                        }
-                        if (nftnl_set_get_u32(t, NFTNL_SET_KEY_TYPE) != d->key_type) {
-                            nftnl_set_free(t);
-                            throw std::runtime_error("nftable set " + d->name + " is of wrong type");
-                        }
-                    }
+                                 const auto* name = nftnl_set_get_str(t, NFTNL_SET_NAME);
+                                 d->logger->debug("Found nftable {}", name);
+                                 if (d->name == name) {
+                                     d->found = true;
+                                     if ((nftnl_set_get_u32(t, NFTNL_SET_FLAGS) & NFT_SET_TIMEOUT) == 0) {
+                                         nftnl_set_free(t);
+                                         throw std::runtime_error("nftable set " + d->name + " does not support timeouts");
+                                     }
+                                     if (d->key_type == KEY_TYPE_IPv6 && (nftnl_set_get_u32(t, NFTNL_SET_FLAGS) & NFT_SET_INTERVAL) == 0) {
+                                         nftnl_set_free(t);
+                                         throw std::runtime_error("nftable set " + d->name + " does not support intervals");
+                                     }
+                                     if (nftnl_set_get_u32(t, NFTNL_SET_KEY_TYPE) != d->key_type) {
+                                         nftnl_set_free(t);
+                                         throw std::runtime_error("nftable set " + d->name + " is of wrong type");
+                                     }
+                                 }
 
-                    nftnl_set_free(t);
-                    return MNL_CB_OK;
-                },
-                &data);
+                                 nftnl_set_free(t);
+                                 return MNL_CB_OK;
+                             },
+                             &data);
             if (ret <= 0) {
                 break;
             }
@@ -115,6 +114,48 @@ class SystemBanSet {
         if (!data.found) {
             throw std::runtime_error("nftable set " + set_name + " not found");
         }
+    }
+
+    bool run_batch(uint16_t type, uint16_t flags) {
+        std::vector<char> buf(MNL_SOCKET_BUFFER_SIZE);
+        auto* batch = mnl_nlmsg_batch_start(&buf[0], buf.size());
+
+        uint32_t seq = std::time(nullptr);
+        nftnl_batch_begin(static_cast<char*>(mnl_nlmsg_batch_current(batch)), seq++);
+        mnl_nlmsg_batch_next(batch);
+
+        if (current_ipv6_set != nullptr) {
+            logger->debug("Committing ipv6 data");
+            auto* nlh = nftnl_nlmsg_build_hdr(static_cast<char*>(mnl_nlmsg_batch_current(batch)), type, table_type, flags, seq++);
+            nftnl_set_elems_nlmsg_build_payload(nlh, current_ipv6_set);
+            mnl_nlmsg_batch_next(batch);
+        }
+
+        if (current_ipv4_set != nullptr) {
+            logger->debug("Committing ipv4 data");
+            auto* nlh = nftnl_nlmsg_build_hdr(static_cast<char*>(mnl_nlmsg_batch_current(batch)), type, table_type, flags, seq++);
+            nftnl_set_elems_nlmsg_build_payload(nlh, current_ipv4_set);
+            mnl_nlmsg_batch_next(batch);
+        }
+
+        nftnl_batch_end(static_cast<char*>(mnl_nlmsg_batch_current(batch)), seq++);
+        mnl_nlmsg_batch_next(batch);
+
+        if (mnl_socket_sendto(nl, mnl_nlmsg_batch_head(batch), mnl_nlmsg_batch_size(batch)) < 0) {
+            throw std::runtime_error(std::string("Could not send to mnl socket: ") + std::strerror(errno));
+        }
+
+        mnl_nlmsg_batch_stop(batch);
+
+        auto ret = mnl_socket_recvfrom(nl, &buf[0], buf.size());
+        while (ret > 0) {
+            ret = mnl_cb_run(&buf[0], ret, 0, portid, nullptr, nullptr);
+            if (ret <= 0) {
+                break;
+            }
+            ret = mnl_socket_recvfrom(nl, &buf[0], buf.size());
+        }
+        return ret != -1;
     }
 
   public:
@@ -224,51 +265,20 @@ class SystemBanSet {
             return;
         }
 
-        std::vector<char> buf(MNL_SOCKET_BUFFER_SIZE);
-        auto* batch = mnl_nlmsg_batch_start(&buf[0], buf.size());
+        run_batch(NFT_MSG_DELSETELEM, NLM_F_ACK);
 
-        uint32_t seq = std::time(nullptr);
-        nftnl_batch_begin(static_cast<char*>(mnl_nlmsg_batch_current(batch)), seq++);
-        mnl_nlmsg_batch_next(batch);
+        bool res = run_batch(NFT_MSG_NEWSETELEM, NLM_F_CREATE | NLM_F_REPLACE | NLM_F_ACK);
 
         if (current_ipv6_set != nullptr) {
-            logger->debug("Committing ipv6 data");
-            auto* nlh = nftnl_nlmsg_build_hdr(static_cast<char*>(mnl_nlmsg_batch_current(batch)), NFT_MSG_NEWSETELEM, table_type,
-                                              NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK, seq++);
-            nftnl_set_elems_nlmsg_build_payload(nlh, current_ipv6_set);
             nftnl_set_free(current_ipv6_set);
             current_ipv6_set = nullptr;
-            mnl_nlmsg_batch_next(batch);
         }
-
         if (current_ipv4_set != nullptr) {
-            logger->debug("Committing ipv4 data");
-            auto* nlh = nftnl_nlmsg_build_hdr(static_cast<char*>(mnl_nlmsg_batch_current(batch)), NFT_MSG_NEWSETELEM, table_type,
-                                              NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK, seq++);
-            nftnl_set_elems_nlmsg_build_payload(nlh, current_ipv4_set);
             nftnl_set_free(current_ipv4_set);
             current_ipv4_set = nullptr;
-            mnl_nlmsg_batch_next(batch);
         }
 
-        nftnl_batch_end(static_cast<char*>(mnl_nlmsg_batch_current(batch)), seq++);
-        mnl_nlmsg_batch_next(batch);
-
-        if (mnl_socket_sendto(nl, mnl_nlmsg_batch_head(batch), mnl_nlmsg_batch_size(batch)) < 0) {
-            throw std::runtime_error(std::string("Could not send to mnl socket: ") + std::strerror(errno));
-        }
-
-        mnl_nlmsg_batch_stop(batch);
-
-        auto ret = mnl_socket_recvfrom(nl, &buf[0], buf.size());
-        while (ret > 0) {
-            ret = mnl_cb_run(&buf[0], ret, 0, portid, nullptr, nullptr);
-            if (ret <= 0) {
-                break;
-            }
-            ret = mnl_socket_recvfrom(nl, &buf[0], buf.size());
-        }
-        if (ret == -1) {
+        if (!res) {
             switch (errno) {
                 case EEXIST:
                     logger->error("ip already in table");
