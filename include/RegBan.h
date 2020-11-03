@@ -257,7 +257,7 @@ class RegBan {
         if (nread == 0) {
             int stat;
             waitpid(process.pid, &stat, 0);
-            if (WIFEXITED(stat)) {
+            if (WIFEXITED(stat) | WIFSIGNALED(stat)) {
                 logger->debug("Command '{}' exited with rc {}", process.command, WEXITSTATUS(stat));
                 if (WEXITSTATUS(stat) != 0) {
                     throw std::runtime_error("Command '" + process.command + "' failed");
