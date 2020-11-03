@@ -41,7 +41,23 @@ static int run(const settings::SettingsNode& settings, bool dry_run) {
     try {
         regban::RegBan r(settings, dry_run);
         rb = &r;
+        const auto& statefilename = settings["statefile"].as<std::string>("");
+        if (!statefilename.empty()) {
+            std::ifstream statefile(statefilename);
+            if (statefile) {
+                try {
+                    r.read_state(settings::SettingsNode(std::make_unique<settings::YAML>(statefile)));
+                } catch (const std::exception& ex) {
+                    logger->error("Could not parse state file: {}", ex.what());
+                }
+            } else {
+                logger->error("Cannot open state file {}", statefilename);
+            }
+        }
         r.run();
+        if (!statefilename.empty()) {
+            r.write_state(statefilename);
+        }
         return 0;
     } catch (const std::exception& ex) {
         logger->critical(ex.what());

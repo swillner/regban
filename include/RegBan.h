@@ -335,6 +335,22 @@ class RegBan {
         }
     }
 
+    void read_state(const settings::SettingsNode& state) {
+        for (const auto& p : state.as_map()) {
+            auto iplookup = iptable.find_or_insert(IPvX::parse(p.first.c_str()));
+            iplookup.second.last_scoretime = std::chrono::system_clock::from_time_t(p.second["last_scoretime"].as<unsigned long>());
+            iplookup.second.score = p.second["score"].as<Score>();
+        }
+    }
+
+    void write_state(const std::string& filename) {
+        std::ofstream o(filename);
+        for (const auto& p : iptable) {
+            o << '"' << p.first << "\":\n  last_scoretime: " << std::chrono::system_clock::to_time_t(p.second.last_scoretime) << "\n  score: " << p.second.score
+              << "\n";
+        }
+    }
+
     void stop() {
         processes.clear();
         write(selfpipe[1], "\0", 1);
