@@ -67,6 +67,7 @@ class RegBan {
     };
     struct Process {
         std::string command;
+        std::string name;
         int fd;
         pid_t pid;
         FILE* stream = nullptr;
@@ -145,6 +146,7 @@ class RegBan {
         for (const auto& processessettings : settings["processes"].as_sequence()) {
             Process& process = *processes.emplace(std::end(processes));
             process.command = processessettings["command"].as<std::string>();
+            process.name = processessettings["name"].as<std::string>();
             for (const auto& patternsettings : processessettings["patterns"].as_sequence()) {
                 const auto p = fill_template(patternsettings["pattern"].as<std::string>());
                 const auto regex = std::regex(p, std::regex::optimize);
@@ -281,6 +283,7 @@ class RegBan {
                     logger->debug("Found match for line '{}' with ip {}", begin, submatch.str());
                     const auto ip = IPvX::parse(submatch.str().c_str());
                     if (ip > 0) {
+                        logger->info("Found match in {}", process.name);
                         handle_ip(ip, now, pattern.score);
                     } else {
                         logger->error("Could not parse ip from '{}'", submatch.str());
