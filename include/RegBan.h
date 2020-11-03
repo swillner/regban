@@ -126,6 +126,7 @@ class RegBan {
     unsigned int cleanup_interval;
     Time last_cleanup;
     unsigned int score_decay_interval;
+    unsigned int restart_usleep;
     bool dry_run;
     int selfpipe[2];  // for self-pipe trick to cancel select() call
     std::shared_ptr<spdlog::logger> logger;
@@ -136,6 +137,7 @@ class RegBan {
         logger = spdlog::default_logger()->clone("RegBan");
 
         cleanup_interval = settings["cleanupinterval"].as<unsigned int>();
+        restart_usleep = settings["restartusleep"].as<unsigned int>(0);
 
         const auto& nftsettings = settings["nft"];
         if (!dry_run) {
@@ -263,6 +265,9 @@ class RegBan {
                     throw std::runtime_error("Command '" + process.command + "' failed");
                 }
                 logger->info("Restarting '{}'", process.command);
+                if (restart_usleep > 0) {
+                    usleep(restart_usleep);
+                }
                 process.open_process();
             }
         }
