@@ -38,6 +38,7 @@ static int run(const settings::SettingsNode& settings, bool dry_run) {
     }
     spdlog::set_default_logger(logger);
 
+    int ret = 0;
     try {
         regban::RegBan r(settings, dry_run);
         rb = &r;
@@ -54,15 +55,20 @@ static int run(const settings::SettingsNode& settings, bool dry_run) {
                 logger->error("Cannot open state file {}", statefilename);
             }
         }
-        r.run();
+        try {
+            r.run();
+        } catch (const std::exception& ex) {
+            logger->critical(ex.what());
+            ret = 255;
+        }
         if (!statefilename.empty()) {
             r.write_state(statefilename);
         }
-        return 0;
     } catch (const std::exception& ex) {
         logger->critical(ex.what());
-        return 255;
+        ret = 255;
     }
+    return ret;
 }
 
 void sig_handler(int sig) {
