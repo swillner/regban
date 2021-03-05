@@ -223,12 +223,12 @@ class RegBan {
         }
     }
 
-    void handle_ip(IPvX ip, Time now, Score add_score) {
+    void handle_ip(IPvX ip, Time now, Score add_score, const std::string& process_name) {
         const auto rangelookup = rangetable.find_range_for(ip);
         if (rangelookup.second != nullptr) {
             const auto rangescore = *rangelookup.second;
             if (rangescore <= 0) {  // ip is always allowed
-                logger->debug("ip {} is always allowed", IPvX::Formatter(ip));
+                logger->info("Match in {} ({} +{} 0 -- always allowed)", process_name, IPvX::Formatter(ip), add_score);
                 return;
             }
             add_score += rangescore;
@@ -243,14 +243,15 @@ class RegBan {
         bandata.score += add_score;
         const auto& tabledata = scoretable.lookup(bandata.score);
         bandata.score += tabledata.add_score;
-        logger->info("Score for {}: {}", IPvX::Formatter(ip), bandata.score);
         if (tabledata.bantime > 0) {
-            logger->warn("Banning {} for {}s", IPvX::Formatter(ip), tabledata.bantime);
+            logger->info("Match in {} ({} +{} {} -- banning for {}s)", process_name, IPvX::Formatter(ip), add_score, bandata.score, tabledata.bantime);
             if (!dry_run) {
                 banset.add_ip(ip, tabledata.bantime);
                 banset.commit_batch();
             }
             bandata.last_bantime = now;
+        } else {
+            logger->info("Match in {} ({} +{} {})", process_name, IPvX::Formatter(ip), add_score, bandata.score);
         }
     }
 
@@ -288,8 +289,7 @@ class RegBan {
                     logger->debug("Found match for line '{}' with ip {}", begin, submatch.str());
                     const auto ip = IPvX::parse(submatch.str().c_str());
                     if (ip > 0) {
-                        logger->info("Found match in {}", process.name);
-                        handle_ip(ip, now, pattern.score);
+                        handle_ip(ip, now, pattern.score, process.name);
                     } else {
                         logger->error("Could not parse ip from '{}'", submatch.str());
                     }
