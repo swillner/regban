@@ -131,6 +131,8 @@ class RegBan {
     int selfpipe[2];  // for self-pipe trick to cancel select() call
     std::shared_ptr<spdlog::logger> logger;
     std::vector<Process> processes;
+    bool ipv4_enabled;
+    bool ipv6_enabled;
 
   public:
     RegBan(const settings::SettingsNode& settings, bool dry_run_p) : dry_run(dry_run_p) {
@@ -140,9 +142,11 @@ class RegBan {
         restart_usleep = settings["restartusleep"].as<unsigned int>(0);
 
         const auto& nftsettings = settings["nft"];
+        ipv4_enabled = nftsettings.has("ipv4set");
+        ipv6_enabled = nftsettings.has("ipv6set");
         if (!dry_run) {
-            banset.initialize(nftsettings["type"].as<std::string>(), nftsettings["table"].as<std::string>(), nftsettings["ipv4set"].as<std::string>(),
-                              nftsettings["ipv6set"].as<std::string>());
+            banset.initialize(nftsettings["type"].as<std::string>(), nftsettings["table"].as<std::string>(), nftsettings["ipv4set"].as<std::string>(""),
+                              nftsettings["ipv6set"].as<std::string>(""));
         }
 
         for (const auto& processessettings : settings["processes"].as_sequence()) {
@@ -224,6 +228,14 @@ class RegBan {
     }
 
     void handle_ip(IPvX ip, Time now, Score add_score, const std::string& process_name) {
+        if (!ipv4_enabled && !ip.is_ipv6()) {
+            logger->debug("Match in {} ({} +{} - -- ipv4 disabled)", process_name, IPvX::Formatter(ip), add_score);
+            return;
+        }
+        if (!ipv6_enabled && ip.is_ipv6()) {
+            logger->debug("Match in {} ({} +{} - -- ipv6 disabled)", process_name, IPvX::Formatter(ip), add_score);
+            return;
+        }
         const auto rangelookup = rangetable.find_range_for(ip);
         if (rangelookup.second != nullptr) {
             const auto rangescore = *rangelookup.second;

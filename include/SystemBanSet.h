@@ -195,10 +195,14 @@ class SystemBanSet {
         }
         portid = mnl_socket_get_portid(nl);
 
-        logger->debug("Checking set {} of ipv4 type", set_v4_name);
-        check_set(set_v4_name, KEY_TYPE_IPv4);
-        logger->debug("Checking set {} of ipv6 type", set_v6_name);
-        check_set(set_v6_name, KEY_TYPE_IPv6);
+        if (!set_v4_name.empty()) {
+            logger->debug("Checking set {} of ipv4 type", set_v4_name);
+            check_set(set_v4_name, KEY_TYPE_IPv4);
+        }
+        if (!set_v6_name.empty()) {
+            logger->debug("Checking set {} of ipv6 type", set_v6_name);
+            check_set(set_v6_name, KEY_TYPE_IPv6);
+        }
     }
 
     ~SystemBanSet() {
