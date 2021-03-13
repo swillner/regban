@@ -69,8 +69,7 @@ class RegBan {
         std::string command;
         std::string name;
         int fd;
-        pid_t pid;
-        FILE* stream = nullptr;
+        pid_t pid = 0;
         std::array<char, BUFFER_SIZE> buf;
         int bufcount = 0;
         std::vector<Pattern> patterns;
@@ -97,25 +96,27 @@ class RegBan {
                 if (dup2(p[1], STDOUT_FILENO) < 0) {
                     throw std::runtime_error("Could not redirect stdout: " + std::string(std::strerror(errno)));
                 }
+                if (dup2(p[1], STDERR_FILENO) < 0) {
+                    throw std::runtime_error("Could not redirect stderr: " + std::string(std::strerror(errno)));
+                }
                 close(p[1]);
-                const char* args[] = {"/bin/sh", "-c", command.c_str(), nullptr};
-                execv(args[0], const_cast<char* const*>(args));
+
+                execl("/bin/sh", "sh", "-c", command.c_str(), nullptr);
                 throw std::runtime_error("Could not run \"/bin/sh -c '" + command + "'\": " + std::strerror(errno));
             }
             close(p[1]);
             fd = p[0];
-            stream = fdopen(fd, "r");
-            if (stream == nullptr) {
-                throw std::runtime_error("Could not open stream to '" + command + "': " + std::strerror(errno));
-            }
         }
+
         void close_process() {
-            if (stream != nullptr) {
+            if (pid > 0) {
                 kill(pid, SIGTERM);
-                stream = nullptr;
+                if (waitpid(pid, nullptr, WNOHANG) == 0) {
+                    kill(pid, SIGKILL);
+                }
+                pid = 0;
             }
         }
-        ~Process() { close_process(); }
     };
 
     IPRangeTable<Score> rangetable;
@@ -268,14 +269,15 @@ class RegBan {
     }
 
     void check_process(Process& process, Time now) {
-        const auto nread = std::fread(&process.buf[process.bufcount], sizeof(process.buf[0]), process.buf.size() - process.bufcount - 1, process.stream);
+        const auto nread = read(process.fd, &process.buf[process.bufcount], process.buf.size() - process.bufcount - 1);
         if (nread == 0) {
             int stat;
-            waitpid(process.pid, &stat, 0);
+            if (waitpid(process.pid, &stat, 0) < 0) {
+                throw std::runtime_error("Waiting for pid " + std::to_string(process.pid) + " failed: " + std::strerror(errno));
+            }
             if (WIFEXITED(stat) | WIFSIGNALED(stat)) {
-                logger->debug("Command '{}' exited with rc {}", process.command, WEXITSTATUS(stat));
                 if (WEXITSTATUS(stat) != 0) {
-                    throw std::runtime_error("Command '" + process.command + "' failed");
+                    throw std::runtime_error("Command '" + process.command + "' failed with rc " + std::to_string(WEXITSTATUS(stat)));
                 }
                 logger->info("Restarting '{}'", process.command);
                 if (restart_usleep > 0) {
@@ -364,6 +366,9 @@ class RegBan {
     }
 
     void stop() {
+        for (auto& process : processes) {
+            process.close_process();
+        }
         processes.clear();
         write(selfpipe[1], "\0", 1);
     }
