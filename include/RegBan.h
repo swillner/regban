@@ -64,10 +64,10 @@ class RegBan {
     struct Pattern {
         std::regex pattern;
         Score score;
+        std::string name;
     };
     struct Process {
         std::string command;
-        std::string name;
         int fd;
         pid_t pid = 0;
         std::array<char, BUFFER_SIZE> buf;
@@ -153,14 +153,14 @@ class RegBan {
         for (const auto& processessettings : settings["processes"].as_sequence()) {
             Process& process = *processes.emplace(std::end(processes));
             process.command = processessettings["command"].as<std::string>();
-            process.name = processessettings["name"].as<std::string>();
+            const auto& name = processessettings["name"].as<std::string>();
             for (const auto& patternsettings : processessettings["patterns"].as_sequence()) {
                 const auto p = fill_template(patternsettings["pattern"].as<std::string>());
                 const auto regex = std::regex(p, std::regex::optimize);
                 if (regex.mark_count() != 1) {
                     throw std::runtime_error("Regexp needs to have exactly one subgroup for " + p);
                 }
-                process.patterns.emplace_back(Pattern{regex, patternsettings["score"].as<Score>()});
+                process.patterns.emplace_back<Pattern>({regex, patternsettings["score"].as<Score>(), patternsettings["name"].as<std::string>(name)});
             }
             process.open_process();
         }
@@ -326,7 +326,7 @@ class RegBan {
                     logger->debug("Found match for line '{}' with ip {}", begin, submatch.str());
                     const auto ip = IPvX::parse(submatch.str().c_str());
                     if (ip > 0) {
-                        handle_ip(ip, now, pattern.score, process.name);
+                        handle_ip(ip, now, pattern.score, pattern.name);
                     } else {
                         logger->error("Could not parse ip from '{}'", submatch.str());
                     }
