@@ -126,6 +126,32 @@ class IPTable {
         return {bucket, std::begin(bucket) + begin};
     }
 
+    // get largest element in bucket smaller than ip
+    std::pair<const Bucket&, typename Bucket::const_iterator> lower_bound(IPvX ip) const {
+        const auto& bucket = buckets[get_bucket_index(ip)];
+        std::size_t begin = 0;
+        std::size_t end = bucket.size();
+
+        if (begin == end) {
+            return {bucket, std::cend(bucket)};
+        }
+
+        if (bucket[begin].ip > ip) {
+            return {bucket, std::cend(bucket)};
+        }
+
+        while (begin + 1 < end) {
+            const auto res = (begin + end) / 2;
+            if (bucket[res].ip <= ip) {
+                begin = res;
+            } else {
+                end = res;
+            }
+        }
+
+        return {bucket, std::cbegin(bucket) + begin};
+    }
+
   public:
     IPTable() { clear(); }
     explicit IPTable(std::size_t size_p) { clear_and_reserve(size_p); }
@@ -148,7 +174,7 @@ class IPTable {
         }
     }
 
-    T* find(IPvX ip) {
+    const T* find(IPvX ip) const {
         const auto res = lower_bound(ip);
         if (res.second != std::end(res.first) && res.second->ip == ip) {
             return &res.second->value;
@@ -204,7 +230,7 @@ class IPRangeTable : public IPTable<IPRangeValue<T>> {
         return {res.first, res.second.value};
     }
 
-    std::pair<std::pair<IPvX, char>, T*> find_range_for(IPvX ip) {
+    std::pair<std::pair<IPvX, char>, const T*> find_range_for(IPvX ip) const {
         auto res = this->lower_bound(ip);
         if (res.second != std::end(res.first)) {
             char shift;
