@@ -217,27 +217,26 @@ class SystemBanSet {
         }
     }
 
-    void add_ip(IPvX ip, unsigned int timeout) {  // timeout in seconds
+    void add_ip_to_batch(IPvX ip, unsigned int timeout) {  // timeout in seconds
         auto* e = nftnl_set_elem_alloc();
         if (e == nullptr) {
             throw std::bad_alloc();
         }
         nftnl_set* current_set;
         if (ip.is_ipv6()) {
-            logger->debug("Adding ipv6 {}", IPvX::Formatter(ip));
+            logger->debug("Adding ipv6 {} timeout {}s", IPvX::Formatter(ip), timeout * 1000);
             const auto begin = ip.byte_representation_v6();
             const auto end = IPvX(ip + 1).byte_representation_v6();
             nftnl_set_elem_set(e, NFTNL_SET_ELEM_KEY, &begin[0], begin.size());
             nftnl_set_elem_set(e, NFTNL_SET_ELEM_KEY_END, &end[0], end.size());
             current_set = current_ipv6_set;
         } else {
-            logger->debug("Adding ipv4 {}", IPvX::Formatter(ip));
+            logger->debug("Adding ipv4 {} timeout {}s", IPvX::Formatter(ip), timeout * 1000);
             const auto d = ip.byte_representation_v4();
             nftnl_set_elem_set(e, NFTNL_SET_ELEM_KEY, &d[0], d.size());
             current_set = current_ipv4_set;
         }
         if (timeout > 0) {
-            logger->debug("Setting timeout to {}", timeout * 1000);
             nftnl_set_elem_set_u64(e, NFTNL_SET_ELEM_TIMEOUT, timeout * 1000);
         }
         if (current_set == nullptr) {
@@ -263,7 +262,9 @@ class SystemBanSet {
         nftnl_set_elem_add(current_set, e);
     }
 
-    void commit_batch() {
+    void commit_add_batch() {
+        logger->debug("Committing add batch");
+
         if (current_ipv4_set == nullptr && current_ipv6_set == nullptr) {
             logger->debug("Empty commit, ignoring");
             return;
@@ -292,6 +293,26 @@ class SystemBanSet {
                 default:
                     throw std::runtime_error(std::string("Error received from mnl socket: ") + std::strerror(errno));
             }
+        }
+    }
+
+    void commit_del_batch() {
+        logger->debug("Committing del batch");
+
+        if (current_ipv4_set == nullptr && current_ipv6_set == nullptr) {
+            logger->debug("Empty commit, ignoring");
+            return;
+        }
+
+        run_batch(NFT_MSG_DELSETELEM, NLM_F_ACK);
+
+        if (current_ipv6_set != nullptr) {
+            nftnl_set_free(current_ipv6_set);
+            current_ipv6_set = nullptr;
+        }
+        if (current_ipv4_set != nullptr) {
+            nftnl_set_free(current_ipv4_set);
+            current_ipv4_set = nullptr;
         }
     }
 };

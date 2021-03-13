@@ -231,43 +231,63 @@ class RegBan {
         }
     }
 
-    void handle_ip(IPvX ip, Time now, Score add_score, const std::string& process_name) {
+    void handle_ip(IPvX ip, Time now, Score match_score, const std::string& process_name) {
         if (!ipv4_enabled && !ip.is_ipv6()) {
-            logger->debug("Match in {} ({} +{} - -- ipv4 disabled)", process_name, IPvX::Formatter(ip), add_score);
+            logger->debug("Match in {} ({} +{} - -- ipv4 disabled)", process_name, IPvX::Formatter(ip), match_score);
             return;
         }
         if (!ipv6_enabled && ip.is_ipv6()) {
-            logger->debug("Match in {} ({} +{} - -- ipv6 disabled)", process_name, IPvX::Formatter(ip), add_score);
+            logger->debug("Match in {} ({} +{} - -- ipv6 disabled)", process_name, IPvX::Formatter(ip), match_score);
             return;
         }
-        const auto rangelookup = rangetable.find_range_for(ip);
-        if (rangelookup.second != nullptr) {
-            const auto rangescore = *rangelookup.second;
-            if (rangescore <= 0) {  // ip is always allowed
-                logger->info("Match in {} ({} +{} 0 -- always allowed)", process_name, IPvX::Formatter(ip), add_score);
-                return;
-            }
-            add_score += rangescore;
-        }
+
         auto iplookup = iptable.find_or_insert(ip);
-        const bool found = iplookup.first;
+        bool found = iplookup.first;
         auto& bandata = iplookup.second;
-        if (found) {
+        if (found && bandata.score > 0) {
             adjust_ip_score(bandata, now);
         }
         bandata.last_scoretime = now;
-        bandata.score += add_score;
-        const auto& tabledata = scoretable.lookup(bandata.score);
-        bandata.score += tabledata.add_score;
-        if (tabledata.bantime > 0) {
-            logger->info("Match in {} ({} +{} {} -- banning for {}s)", process_name, IPvX::Formatter(ip), add_score, bandata.score, tabledata.bantime);
+        bandata.score += match_score;
+
+        if (match_score == 0 || bandata.score <= 0) {
+            // unbanning
+            bandata.score = 0;
+            logger->info("Match in {} ({} {}+0+0~0 -- unbanning)", process_name, IPvX::Formatter(ip), match_score);
             if (!dry_run) {
-                banset.add_ip(ip, tabledata.bantime);
-                banset.commit_batch();
+                banset.add_ip_to_batch(ip, 0);
+                banset.commit_del_batch();
             }
-            bandata.last_bantime = now;
+        } else if (match_score < 0) {
+            logger->info("Match in {} ({} {}+0+0~{})", process_name, IPvX::Formatter(ip), match_score, bandata.score);
         } else {
-            logger->info("Match in {} ({} +{} {})", process_name, IPvX::Formatter(ip), add_score, bandata.score);
+            // banning
+            Score add_score = 0;
+            for (auto& rangetable : rangetables) {
+                const auto rangelookup = rangetable.find_range_for(ip);
+                if (rangelookup.second != nullptr) {
+                    const auto rangescore = *rangelookup.second;
+                    if (rangescore <= 0) {  // ip is always allowed
+                        logger->info("Match in {} ({} {}+0+0~0 -- always allowed)", process_name, IPvX::Formatter(ip), match_score);
+                        bandata.score = 0;
+                        return;
+                    }
+                    add_score += rangescore;
+                }
+            }
+            const auto& tabledata = scoretable.lookup(bandata.score);
+            bandata.score += add_score + tabledata.add_score;
+            if (tabledata.bantime > 0) {
+                logger->info("Match in {} ({} {}+{}+{}~{} -- banning for {}s)", process_name, IPvX::Formatter(ip), match_score, add_score, tabledata.add_score,
+                             bandata.score, tabledata.bantime);
+                if (!dry_run) {
+                    banset.add_ip_to_batch(ip, tabledata.bantime);
+                    banset.commit_add_batch();
+                }
+                bandata.last_bantime = now;
+            } else {
+                logger->info("Match in {} ({} {}+{}+{}~{})", process_name, IPvX::Formatter(ip), match_score, add_score, tabledata.add_score, bandata.score);
+            }
         }
     }
 
