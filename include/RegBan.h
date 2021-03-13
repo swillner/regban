@@ -119,7 +119,7 @@ class RegBan {
         }
     };
 
-    IPRangeTable<Score> rangetable;
+    std::vector<IPRangeTable<Score>> rangetables;
     IPTable<BanData> iptable;
     Score score_decay;
     ScoreTable scoretable;
@@ -166,6 +166,7 @@ class RegBan {
         }
 
         for (const auto& rangetablesettings : settings["rangetables"].as_sequence()) {
+            IPRangeTable<Score> rangetable;
             if (rangetablesettings.has("filename")) {
                 const auto& filename = rangetablesettings["filename"].as<std::string>();
                 std::ifstream file(filename);
@@ -182,9 +183,11 @@ class RegBan {
                     throw std::runtime_error(ex.format());
                 }
             } else {
-                rangetable.find_or_insert(IPvX::parse(rangetablesettings["ip"].as<std::string>().c_str()), rangetablesettings["cidr"].as<unsigned>()).second =
-                    rangetablesettings["score"].as<Score>();
+                for (const auto& it : rangetablesettings["table"].as_sequence()) {
+                    rangetable.find_or_insert(IPvX::parse(it["ip"].as<std::string>().c_str()), it["cidr"].as<unsigned>()).second = it["score"].as<Score>();
+                }
             }
+            rangetables.push_back(std::move(rangetable));
         }
 
         const auto& scoressettings = settings["scores"];
