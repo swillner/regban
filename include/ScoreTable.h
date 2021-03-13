@@ -19,7 +19,7 @@ class ScoreTable {
     std::vector<Element> table;
 
   public:
-    explicit ScoreTable(Score base_add_score = 0) { table.emplace_back(Element{0, 0, base_add_score}); }
+    explicit ScoreTable(Score base_add_score = 0) { table.emplace_back<Element>({0, 0, base_add_score}); }
 
     void add(Element e) {
         auto it = std::cbegin(table);

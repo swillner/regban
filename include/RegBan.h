@@ -223,7 +223,7 @@ class RegBan {
             auto& bandata = e.second;
             adjust_ip_score(bandata, now);
             if (bandata.score <= 0) {
-                to_remove.emplace_back(ip);
+                to_remove.push_back(ip);
             }
         }
         for (const auto ip : to_remove) {
