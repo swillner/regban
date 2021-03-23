@@ -275,8 +275,9 @@ class RegBan {
                     add_score += rangescore;
                 }
             }
+            bandata.score += add_score;
             const auto& tabledata = scoretable.lookup(bandata.score);
-            bandata.score += add_score + tabledata.add_score;
+            bandata.score += tabledata.add_score;
             if (tabledata.bantime > 0) {
                 logger->info("Match in {} ({} {}+{}+{}~{} -- banning for {}s)", process_name, IPvX::Formatter(ip), match_score, add_score, tabledata.add_score,
                              bandata.score, tabledata.bantime);
